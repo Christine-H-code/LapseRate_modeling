@@ -274,7 +274,7 @@ def post_sale_data_merge(post_sale_calls_data, sales_data,policy_data,lapse_data
 
     post_sale_data = multi_data_ops(file_list=[],df1=post_sale_calls_data, df2=sales_data,df3=policy_data,df4=payment_hist_data, df5=lapse_data)
 
-    sales_policy = post_sale_data.merging(on='policy_name',df_left=at_inception_data.df2, df_right=at_inception_data.df3, how='inner', col_left=['policy_id', 'policy_name', 'age', 'benefits_count', 
+    sales_policy = post_sale_data.merging(on='policy_name',df_left=post_sale_data.df2, df_right=post_sale_data.df3, how='inner', col_left=['policy_id', 'policy_name', 'age', 'benefits_count', 
         'education','gender', 'income', 'lead_provider_name', 'lead_type', 'occupation',
         'payment_profile', 'sales_channel', 'smoker_status',
         'sold_socio_economic_class', 'underwriting_outcome'], col_right=['securitygroup_id', 'policy_name','campaign_name','optionality',
