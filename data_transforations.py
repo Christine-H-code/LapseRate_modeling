@@ -306,18 +306,18 @@ def post_sale_data_merge(post_sale_calls_data, sales_data,policy_data,lapse_data
        'res_code_payment_sum', 'res_code_sale_sum', 'res_code_update_sum','total_funeral_premium', 'funeral_count']:
         post_sale_data.df_merged[col] = post_sale_data.df_merged[col].apply(lambda x: x if pd.notnull(x) else 0)
 
-        post_sale_data.df_merged = post_sale_data.df_merged[['policy_id', 'policy_name', 'age','education','gender', 'income','current individual_income', 'orginal individual_income', 'partner_income','occupation','occupation_class', 'smoker_status',
-             'sold_socio_economic_class',
-             'lead_provider_name', 'lead_type','sales_channel', 'campaign_name',
-             '# calls', '# calls contacted','res_code_QA_sum', 'res_code_claims_sum', 'res_code_other_sum','res_code_payment_sum', 'res_code_sale_sum', 'res_code_update_sum',
-              'securitygroup_id','benefits_count', 'policy_type', 'original_premium','premium','last_main_premium', 'prev_premium','last premium amount due',
-              '* policy start delay months', '* policy duration months','duration to anniversary','cover_amount_full','last_benefit_amount','fixed_debit_day', 'total_funeral_premium', 'funeral_count',
-            '# anniversaries','has_been_recaptured', 'reason', 
-            'underwriting_outcome','optionality', 'hiv_test_required','pricing_version', 'eml', 'pml','hiv_group',
-            'number_of_collection_attempts', 'number_of_successful_collections','total_collected', 'net_collected', 'payment_method_DebiCheck_sum', 'payment_method_EFT_sum','payment_method_Pre Fund_sum',
-            'payment rate','1 month ago payment', '2 month ago payment', '3 month ago payment', '4 month ago payment', '# claims',
-            'policy_status','last_benefit_status', 'current_policy_status','lapse_type','cancellation_effective_date',  'cancellation_reason',  'lapse_flag', 'expected_lapse_rate'
-               ,'cover_start_date']]
+        #post_sale_data.df_merged = post_sale_data.df_merged[['policy_id', 'policy_name', 'age','education','gender', 'income','current individual_income', 'orginal individual_income', 'partner_income','occupation','occupation_class', 'smoker_status',
+        #     'sold_socio_economic_class',
+        #     'lead_provider_name', 'lead_type', 'campaign_name',
+        #     '# calls', '# calls contacted','res_code_QA_sum', 'res_code_claims_sum', 'res_code_other_sum','res_code_payment_sum', 'res_code_sale_sum', 'res_code_update_sum',
+        #      'securitygroup_id','benefits_count', 'policy_type', 'original_premium','premium','last_main_premium', 'prev_premium','last premium amount due',
+        #      '* policy start delay months', '* policy duration months','duration to anniversary','cover_amount_full','last_benefit_amount','fixed_debit_day', 'total_funeral_premium', 'funeral_count',
+        #    '# anniversaries','has_been_recaptured', 'reason', 
+        #    'underwriting_outcome','optionality', 'hiv_test_required','pricing_version', 'eml', 'pml','hiv_group',
+        #    'number_of_collection_attempts', 'number_of_successful_collections','total_collected', 'net_collected', 'payment_method_DebiCheck_sum', 'payment_method_EFT_sum','payment_method_Pre Fund_sum',
+        #    'payment rate','1 month ago payment', '2 month ago payment', '3 month ago payment', '4 month ago payment', '# claims',
+        #    'policy_status','last_benefit_status', 'current_policy_status','lapse_type','cancellation_effective_date',  'cancellation_reason',  'lapse_flag', 'expected_lapse_rate'
+        #       ,'cover_start_date']]
         
         return post_sale_data.df_merged
       
