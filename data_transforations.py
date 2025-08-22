@@ -296,7 +296,7 @@ def post_sale_data_merge(post_sale_calls_data, sales_data,policy_data,lapse_data
     
      
     
-    sale_policy_lapse_pay = post_sale_data.merging(on='policy_id',df_left=sale_policy_lapse, df_right=post_sale_data.df4, how='inner', col_right=list(set(post_sale_data.df4.columns)|{'sales_channel'}))
+    sale_policy_lapse_pay = post_sale_data.merging(on='policy_id',df_left=sale_policy_lapse, df_right=post_sale_data.df4, how='inner')
     
     post_sale_data.df_merged = post_sale_data.merging(on='policy_name',df_left=sale_policy_lapse_pay, df_right=post_sale_data.df1, how='left')
 
