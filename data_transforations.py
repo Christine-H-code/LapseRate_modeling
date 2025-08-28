@@ -306,21 +306,100 @@ def post_sale_data_merge(post_sale_calls_data, sales_data,policy_data,lapse_data
        'res_code_payment_sum', 'res_code_sale_sum', 'res_code_update_sum','total_funeral_premium', 'funeral_count']:
         post_sale_data.df_merged[col] = post_sale_data.df_merged[col].apply(lambda x: x if pd.notnull(x) else 0)
 
-        #post_sale_data.df_merged = post_sale_data.df_merged[['policy_id', 'policy_name', 'age','education','gender', 'income','current individual_income', 'orginal individual_income', 'partner_income','occupation','occupation_class', 'smoker_status',
-        #     'sold_socio_economic_class',
-        #     'lead_provider_name', 'lead_type', 'campaign_name',
-        #     '# calls', '# calls contacted','res_code_QA_sum', 'res_code_claims_sum', 'res_code_other_sum','res_code_payment_sum', 'res_code_sale_sum', 'res_code_update_sum',
-        #      'securitygroup_id','benefits_count', 'policy_type', 'original_premium','premium','last_main_premium', 'prev_premium','last premium amount due',
-        #      '* policy start delay months', '* policy duration months','duration to anniversary','cover_amount_full','last_benefit_amount','fixed_debit_day', 'total_funeral_premium', 'funeral_count',
-        #    '# anniversaries','has_been_recaptured', 'reason', 
-        #    'underwriting_outcome','optionality', 'hiv_test_required','pricing_version', 'eml', 'pml','hiv_group',
-        #    'number_of_collection_attempts', 'number_of_successful_collections','total_collected', 'net_collected', 'payment_method_DebiCheck_sum', 'payment_method_EFT_sum','payment_method_Pre Fund_sum',
-        #    'payment rate','1 month ago payment', '2 month ago payment', '3 month ago payment', '4 month ago payment', '# claims',
-        #    'policy_status','last_benefit_status', 'current_policy_status','lapse_type','cancellation_effective_date',  'cancellation_reason',  'lapse_flag', 'expected_lapse_rate'
-        #       ,'cover_start_date']]
-        
+    
         return post_sale_data.df_merged
       
 
+#________________________________________________________________________________________________________
+def near_ftr_lapse_data_clean_filter(near_ftr_lapse_data):
+    #filling out some missing data with 0 and removing column
+    near_ftr_lapse_data[['total_funeral_premium','funeral_count','res_code_update_sum','res_code_sale_sum','res_code_payment_sum','res_code_other_sum','res_code_claims_sum',
+                           'res_code_QA_sum','# calls contacted']]=near_ftr_lapse_data[['total_funeral_premium','funeral_count','res_code_update_sum','res_code_sale_sum','res_code_payment_sum','res_code_other_sum','res_code_claims_sum',
+                           'res_code_QA_sum','# calls contacted']].fillna(0)
+    near_ftr_lapse_data.drop(columns=['partner_income','fixed_debit_day','total_collected', 'net_collected','number_of_collection_attempts', 'number_of_successful_collections', 'campaign_name',
+                                  'pricing_version','expected_lapse_rate', 'hiv_test_required',  'hiv_group', 'lead_provider_name', 'lead_type',
+                                        'occupation', 'occupation_class','underwriting_outcome','sales_channel_x', 'sales_channel_y','anniversary_due', 'cover_start_date_original', 'first_collected_date', 'first_month_at_risk', 'last_benefit_type', 'last_month_at_risk', 'last_settled','sale_date','payment_profile','SEC'], inplace=True)
 
+
+    near_ftr_lapse_data=near_ftr_lapse_data[near_ftr_lapse_data['has_been_recaptured']==0]
+    near_ftr_lapse_data=near_ftr_lapse_data[near_ftr_lapse_data['policy_type']=='Fully Underwritten']
+    return near_ftr_lapse_data
+
+
+def at_inception_data_clean_filter(inception_data):
+    inception_data.drop(columns=['partner_income','fixed_debit_day','pricing_version','expected_lapse_rate'], inplace=True)
+
+    inception_data=inception_data[inception_data['policy_type']=='Fully Underwritten']
+
+    #exclude migrated policies
+    inception_data = inception_data[~inception_data['campaign_name'].isin(['MWL_TE_IN Migrated Policies 2023','MWL_TE_OUT Migrated Policies 2023'])]
+    return inception_data
+
+#_______________________________________________________________________________________________________________________________
+
+def adding_eco_ind(inflation, unemployment,data,date_col):
+    data = pd.merge(data, inflation, left_on=date_col, right_on='year', how='left')
+    data = pd.merge(data, unemployment, left_on=date_col, right_on='year', how='left')
+    data.rename(columns={'ave':'unemployment rate'}, inplace=True)
+    data.drop(columns=['year_x','year_y'], inplace=True)
+    return data
+#________________________________________________________________________________________________________________________________
+
+def inception_targets(at_inception):
+    at_inception['cover_start_date']= pd.to_datetime(at_inception['cover_start_date'])
+    at_inception['cancellation_effective_date']= pd.to_datetime(at_inception['cancellation_effective_date'])
+    current_date = datetime.strptime('2025-08-01', "%Y-%m-%d")
+    at_inception['cancellation_effective_date']=pd.to_datetime(at_inception['cancellation_effective_date'])
+    at_inception['end_date'] = at_inception['cancellation_effective_date'].apply(lambda x: x if pd.notnull(x) else current_date)
+    at_inception['pol_duration'] = (at_inception['end_date']-at_inception['cover_start_date']).dt.days//30
+
+    month3_df = at_inception.copy()
+    month3_df['3month_lapse'] = ((at_inception['pol_duration']<4)&(at_inception['lapse_flag']==True)).astype(int)
+    month3_df[['pol_duration','lapse_flag','3month_lapse']]
+
+
+    month6_df = at_inception.copy()
+    month6_df['6month_lapse'] = ((at_inception['pol_duration']<7)&(at_inception['lapse_flag']==True)).astype(int)
+    month6_df[['pol_duration','lapse_flag','6month_lapse']]
+
+    year1_df = at_inception.copy()
+    year1_df['1yr_lapse'] = ((at_inception['pol_duration']<13)&(at_inception['lapse_flag']==True)).astype(int)
+    year1_df[['pol_duration','lapse_flag','1yr_lapse']]
+
+    year2_df = at_inception.copy()
+    year2_df['2yr_lapse'] = ((at_inception['pol_duration']<25)&(at_inception['lapse_flag']==True)).astype(int)
+    year2_df[['pol_duration','lapse_flag','2yr_lapse']]
+
+    #flagging policy holder that lapse right after anniversay for year 1, 2,3 or 4
+    ann_lapse_df = at_inception[at_inception['pol_duration']>11].copy()
+    ann_lapse_df['ann_lapse'] = (((at_inception['pol_duration']>10)&(at_inception['pol_duration']<17)&(at_inception['lapse_flag']==True)) | 
+                                 ((at_inception['pol_duration']>22)&(at_inception['pol_duration']<29)&(at_inception['lapse_flag']==True)) |
+                                 ((at_inception['pol_duration']>34)&(at_inception['pol_duration']<41)&(at_inception['lapse_flag']==True))).astype(int)
+
+    ann_lapse_df[['pol_duration','lapse_flag','ann_lapse']]
+
+    at_inception_data = multi_data_ops(file_list=[],df1=at_inception,df2=month3_df,df3=month6_df,df4=year1_df,df5=ann_lapse_df)
+    m_df=at_inception_data.merging(on='policy_id',df_left=at_inception_data.df1, df_right=at_inception_data.df2, how='left',col_right=['policy_id','3month_lapse'])
+    m_df=at_inception_data.merging(on='policy_id',df_left=m_df, df_right=at_inception_data.df3, how='left',col_right=['policy_id','6month_lapse'])
+    m_df=at_inception_data.merging(on='policy_id',df_left=m_df, df_right=at_inception_data.df4, how='left',col_right=['policy_id','1yr_lapse'])
+    at_inception_data.df_merged=at_inception_data.merging(on='policy_id',df_left=m_df, df_right=at_inception_data.df5, how='left',col_right=['policy_id','ann_lapse'])
+
+    at_inception_data = multi_data_ops(file_list=[],df1=at_inception_data.df_merged,df2=year2_df)
+    at_inception_data.df_merged=at_inception_data.merging(on='policy_id',df_left=at_inception_data.df1, df_right=at_inception_data.df2, how='left',col_right=['policy_id','2yr_lapse'])
+    return at_inception_data.df_merged
+
+#________________________________________________________________________________________________________________
+
+def near_ftr_targets(near_ftr):
+    near_ftr['cover_start_date']= pd.to_datetime(near_ftr['cover_start_date'])
+    near_ftr['cancellation_effective_date']= pd.to_datetime(near_ftr['cancellation_effective_date'])
+    near_ftr['end_date']= pd.to_datetime(near_ftr['end_date'])
+
+    month3lapse= near_ftr[['lapse_flag','policy_id','lapse_type']].copy()
+    month3lapse=month3lapse[month3lapse['lapse_type'].isin(['Payment Lapsed'])]
+    month3lapse['payment lapse'] = month3lapse['lapse_flag']
+    near_ftr = pd.merge(near_ftr,month3lapse[['policy_id','payment lapse']],how='left',on='policy_id')
+    return near_ftr
+
+#__________________________________________________________________________________________________________________
 
