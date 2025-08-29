@@ -393,7 +393,6 @@ def inception_targets(at_inception):
 def near_ftr_targets(near_ftr):
     near_ftr['cover_start_date']= pd.to_datetime(near_ftr['cover_start_date'])
     near_ftr['cancellation_effective_date']= pd.to_datetime(near_ftr['cancellation_effective_date'])
-    near_ftr['end_date']= pd.to_datetime(near_ftr['end_date'])
 
     month3lapse= near_ftr[['lapse_flag','policy_id','lapse_type']].copy()
     month3lapse=month3lapse[month3lapse['lapse_type'].isin(['Payment Lapsed'])]
