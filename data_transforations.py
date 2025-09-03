@@ -111,7 +111,6 @@ def pre_sale_calls(calls_data,policy_data):
     calls = DataPreparation(df=calls_data)
     calls.cleaning_ops(drop_nulls = 'N',filtering = 'Y',filter_conditions_exclude={'resolution_code':['retentions_policy_cancelled','policy_cancelled','unpaid_cancelled_policy']})
     calls.df['res_code']= calls.df['resolution_code'].apply(res_code_categories)
- #!!!!!!!!!!!!!!!!!!update res_code buckets!!!!!!!!!!!!!!!!!!
 
     #_______________Adding sales date to calls data to filter to calls made after sale______________________
     calls_sale_date = multi_data_ops(file_list=[],df1=calls.df, df2=policy_data)
