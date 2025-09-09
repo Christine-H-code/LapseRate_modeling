@@ -105,7 +105,7 @@ def post_sale_calls(calls_data,policy_data):
 
 def pre_sale_calls(calls_data,policy_data):
 
-    policy_data['first_month_at_risk'] = pd.to_datetime(policy_data['first_month_at_risk'], errors='coerce')
+    policy_data['sale_date'] = pd.to_datetime(policy_data['sale_date'], errors='coerce')
 
     #______________Remove calls related to cancellation resolution codes_______________________
     calls = DataPreparation(df=calls_data)
@@ -114,11 +114,11 @@ def pre_sale_calls(calls_data,policy_data):
 
     #_______________Adding sales date to calls data to filter to calls made after sale______________________
     calls_sale_date = multi_data_ops(file_list=[],df1=calls.df, df2=policy_data)
-    calls_sale_date.merged_df = calls_sale_date.merging(on='policy_name', df_left=calls_sale_date.df1, df_right=calls_sale_date.df2, how='left', col_right=['policy_name','first_month_at_risk'])
+    calls_sale_date.merged_df = calls_sale_date.merging(on='policy_name', df_left=calls_sale_date.df1, df_right=calls_sale_date.df2, how='left', col_right=['policy_name','sale_date'])
 
     #__________________Selecting only call records before inception date___________________
     
-    calls.df = calls_sale_date.merged_df[calls_sale_date.merged_df['datetime_start'].dt.strftime('%Y-%m-%d')<calls_sale_date.merged_df['first_month_at_risk'].dt.strftime('%Y-%m-%d')]
+    calls.df = calls_sale_date.merged_df[calls_sale_date.merged_df['datetime_start'].dt.strftime('%Y-%m-%d')<calls_sale_date.merged_df['sale_date'].dt.strftime('%Y-%m-%d')]
 
     #__________________Aggregating calls data to policy_name_____________________
     agg_dict={'# calls': pd.NamedAgg(column='call_id', aggfunc=pd.Series.nunique),
@@ -137,15 +137,10 @@ def payments_history(payment_data,current_date='2025-08-01'):
     #_______________making anniversary date a datetime dtype_____________
     payment_data['anniversary_due'] = pd.to_datetime(payment_data['anniversary_due'], errors='coerce')
 
-    #_______________Splitiing claims and monthly premium payments____________
-    claims_data = payment_data[payment_data['collection_sub_type']=='Claim']
+    #_______________Getting monthly premium payments____________
+
     payment_data = payment_data[payment_data['collection_sub_type']=='Monthly']
 
-    #_______________aggregating claims data to policy________________
-    claims = DataPreparation(df=claims_data)
-    agg_dict = {'# claims': pd.NamedAgg(column='collections_id', aggfunc=pd.Series.nunique)}
-    claims.aggregation(groupby_cols=['policy_id'],cat_cols=[],agg_dict_not_cat_cols=agg_dict)
-    claims.agg_df
 
     #________________making paid/unpaid flag__________________________
     payment_data['paid?']= payment_data['collected_amount'].apply(lambda x: 'paid' if pd.notnull(x) else 'unpaid')
@@ -176,14 +171,13 @@ def payments_history(payment_data,current_date='2025-08-01'):
     #___________________portion of payment due that were paid_______________
     payments.agg_df['payment rate']=payments.agg_df['paid?_paid_sum']/(payments.agg_df['paid?_paid_sum']+payments.agg_df['paid?_unpaid_sum'])
 
-    #____________________Adding all data together (agg paments data, last months paid data and claims)________________________
-    payments_data = multi_data_ops(file_list=[],df1=payments.agg_df,df2=last_month_payments_data,df3=claims.agg_df)
-    pay_last = payments_data.merging(on='policy_id',df_left=payments_data.df1, df_right=payments_data.df2, how='left',col_left=['policy_id', 'sales_channel', '* policy start delay months',
+    #____________________Adding all data together (agg paments data, last months paid data)________________________
+    payments_data = multi_data_ops(file_list=[],df1=payments.agg_df,df2=last_month_payments_data)
+    payments_data.merged_df = payments_data.merging(on='policy_id',df_left=payments_data.df1, df_right=payments_data.df2, how='left',col_left=['policy_id', 'sales_channel', '* policy start delay months',
             '* policy duration months', 'last premium amount due',
             'duration to anniversary','payment_method_DebiCheck_sum', 'payment_method_EFT_sum',
             'payment_method_Pre Fund_sum', '# anniversaries', 'payment rate'])
-    payments_data.merged_df = payments_data.merging(on='policy_id',df_left=pay_last, df_right=payments_data.df3, how='left')
-    payments_data.merged_df['# claims'] = payments_data.merged_df['# claims'].apply(lambda x: x if pd.notnull(x) else 0)
+
 
     return payments_data.merged_df
 #____________________________________________________________________________________________________________________________________   
@@ -191,18 +185,14 @@ def payments_history(payment_data,current_date='2025-08-01'):
 def lapses(lapse_data):
     lapse = DataPreparation(df=lapse_data)
     agg_dict={'cover_amount_full': pd.NamedAgg(column='cover_amount_full', aggfunc='mean'),
-              'current_policy_status': pd.NamedAgg(column='current_policy_status', aggfunc='last'),
               'education': pd.NamedAgg(column='education', aggfunc='last'),
               'eml': pd.NamedAgg(column='eml', aggfunc='mean'),
               'pml': pd.NamedAgg(column='pml', aggfunc='mean'),
-              'expected_lapse_rate': pd.NamedAgg(column='expected_lapse_rate', aggfunc='mean'),
               'gender': pd.NamedAgg(column= 'gender', aggfunc='last'),
-              'hiv_group': pd.NamedAgg(column='hiv_group', aggfunc='last'),
               'current individual_income': pd.NamedAgg(column='individual_income', aggfunc='last'),
               'orginal individual_income': pd.NamedAgg(column='individual_income', aggfunc='first'),
               'lapse_type': pd.NamedAgg(column='lapse_type', aggfunc=lambda x: x.mode().iloc[0] if not x.mode().empty else np.nan),
               'occupation_class': pd.NamedAgg(column='occupation_class', aggfunc='last'),
-              'partner_income': pd.NamedAgg(column='partner_income', aggfunc='last'),
               'smoker_status': pd.NamedAgg(column='smoker_status', aggfunc='last')
               }
     lapse.aggregation(groupby_cols=['policy_name'],cat_cols=[],agg_dict_not_cat_cols=agg_dict)
@@ -215,24 +205,16 @@ def at_inception_data_merge(pre_inception_calls_data, sales_data,policy_data,lap
     at_inception_data = multi_data_ops(file_list=[],df1=pre_inception_calls_data, df2=sales_data,df3=policy_data,df4=lapse_data)
 
     sale_policy = at_inception_data.merging(on='policy_name',df_left=at_inception_data.df2, df_right=at_inception_data.df3, how='inner', col_left=['policy_id', 'policy_name', 'age', 'benefits_count', 
-        'education','gender', 'income', 'lead_provider_name', 'lead_type', 'occupation',
-        'payment_profile', 'sales_channel', 'smoker_status',
-        'sold_socio_economic_class', 'underwriting_outcome'], col_right=['securitygroup_id', 'policy_name', 'campaign_name', 'optionality',
-        'hiv_test_required', 'policy_type', 'policy_status', 'premium', 'cover_start_date_original','cover_start_date', 
-        'cancellation_effective_date','sale_date', 'original_premium',
-        'cancellation_reason', 'anniversary_due', 'last_benefit_amount',
-        'first_month_at_risk', 'last_month_at_risk', 'last_settled', 'SEC',
-        'pricing_version', 'first_collected_date',
-        'number_of_collection_attempts', 'number_of_successful_collections',
-        'total_collected',  'net_collected',
-        'last_main_premium', 'last_benefit_type', 'total_funeral_premium',
-        'funeral_count', 'has_been_recaptured', 'reason', 'last_benefit_status', 'prev_premium', 'fixed_debit_day',
+        'education','gender', 'income', 'lead_provider_name', 'lead_type',  'smoker_status',
+        'sold_socio_economic_class'], col_right=[ 'policy_name', 'campaign_name', 'optionality',
+        'hiv_test_required', 'policy_type', 'premium', 'cover_start_date_original','cover_start_date', 
+        'cancellation_effective_date','sale_date', 'original_premium', 'anniversary_due', 'last_benefit_amount',
+        'last_month_at_risk','total_funeral_premium','funeral_count', 'has_been_recaptured',   'prev_premium',
         'lapse_flag'])
     
-    sale_policy_lapse = at_inception_data.merging(on='policy_name',df_left=sale_policy, df_right=at_inception_data.df4, how='inner', col_right=['policy_name', 'cover_amount_full', 'current_policy_status',
-         'eml', 'pml', 'expected_lapse_rate', 'hiv_group',
-        'current individual_income', 'orginal individual_income', 'lapse_type',
-        'occupation_class', 'partner_income'])
+    sale_policy_lapse = at_inception_data.merging(on='policy_name',df_left=sale_policy, df_right=at_inception_data.df4, how='inner', col_right=['policy_name', 'cover_amount_full',
+         'eml', 'pml',  'current individual_income', 'orginal individual_income', 'lapse_type',
+        'occupation_class'])
     
     at_inception_data.df_merged = at_inception_data.merging(on='policy_name',df_left=sale_policy_lapse, df_right=at_inception_data.df1, how='left')
 
@@ -256,14 +238,12 @@ def at_inception_data_merge(pre_inception_calls_data, sales_data,policy_data,lap
 
     #ordering the columns
     at_inception_data.df_merged = at_inception_data.df_merged[['policy_id', 'policy_name', 'age', 'education',
-           'gender', 'income', 'smoker_status','sold_socio_economic_class','occupation_class','occupation','orginal individual_income','partner_income',
-           'lead_provider_name', 'lead_type', 'sales_channel','sale_date', 'campaign_name',
-           'underwriting_outcome','optionality', 'hiv_test_required','pricing_version', 'eml', 'pml','hiv_group',
-           'securitygroup_id','policy_type','benefits_count','last_benefit_amount','cover_amount_full','total_funeral_premium','funeral_count','original_premium','fixed_debit_day','duration_policy_start_delay',
+           'gender', 'income', 'smoker_status','sold_socio_economic_class','occupation_class','orginal individual_income',
+           'lead_provider_name', 'lead_type', 'sale_date', 'campaign_name',
+           'optionality', 'hiv_test_required', 'eml', 'pml','policy_type','benefits_count','last_benefit_amount','cover_amount_full','total_funeral_premium','funeral_count','original_premium','duration_policy_start_delay',
            '# calls','# calls contacted', 'res_code_QA_sum', 'res_code_claims_sum','res_code_no interest_sum', 'res_code_other_sum',
            'res_code_payment_sum', 'res_code_quote_sum', 'res_code_sale_sum','res_code_update_sum',
-           'policy_status','current_policy_status','cancellation_effective_date', 'cancellation_reason', 'lapse_type', 'lapse_flag',  'expected_lapse_rate'
-           , 'cover_start_date' ]] # use cover_start_date, cancellation_effective_date to get econimic indexes
+           'cancellation_effective_date', 'lapse_type', 'lapse_flag' , 'cover_start_date' ]] # use cover_start_date, cancellation_effective_date to get econimic indexes
     
     return at_inception_data.df_merged
 
@@ -274,24 +254,18 @@ def post_sale_data_merge(post_sale_calls_data, sales_data,policy_data,lapse_data
     post_sale_data = multi_data_ops(file_list=[],df1=post_sale_calls_data, df2=sales_data,df3=policy_data,df4=payment_hist_data, df5=lapse_data)
 
     sales_policy = post_sale_data.merging(on='policy_name',df_left=post_sale_data.df2, df_right=post_sale_data.df3, how='inner', col_left=['policy_id', 'policy_name', 'age', 'benefits_count', 
-        'education','gender', 'income', 'lead_provider_name', 'lead_type', 'occupation',
-        'payment_profile', 'sales_channel', 'smoker_status',
-        'sold_socio_economic_class', 'underwriting_outcome'], col_right=['securitygroup_id', 'policy_name','campaign_name','optionality',
-        'hiv_test_required', 'policy_type', 'policy_status', 'premium', 'cover_start_date_original','cover_start_date', 
+        'education','gender', 'income', 'lead_provider_name', 'lead_type', 'smoker_status',
+        'sold_socio_economic_class'], col_right=[ 'policy_name','campaign_name','optionality',
+        'hiv_test_required', 'policy_type', 'premium', 'cover_start_date_original','cover_start_date', 
         'cancellation_effective_date','sale_date', 'original_premium',
-        'cancellation_reason', 'anniversary_due', 'last_benefit_amount',
-        'first_month_at_risk', 'last_month_at_risk', 'last_settled', 'SEC',
-        'pricing_version', 'first_collected_date',
-        'number_of_collection_attempts', 'number_of_successful_collections',
-        'total_collected',  'net_collected',
-        'last_main_premium', 'last_benefit_type', 'total_funeral_premium',
-        'funeral_count', 'has_been_recaptured', 'reason', 'last_benefit_status', 'prev_premium', 'fixed_debit_day',
+        'anniversary_due', 'last_benefit_amount',
+         'total_funeral_premium','funeral_count', 'has_been_recaptured', 'prev_premium',
         'lapse_flag'])
     
-    sale_policy_lapse = post_sale_data.merging(on='policy_name',df_left=sales_policy, df_right=post_sale_data.df5, how='inner', col_right=['policy_name', 'cover_amount_full', 'current_policy_status',
-         'eml', 'pml', 'expected_lapse_rate', 'hiv_group',
+    sale_policy_lapse = post_sale_data.merging(on='policy_name',df_left=sales_policy, df_right=post_sale_data.df5, how='inner', col_right=['policy_name', 'cover_amount_full',
+         'eml', 'pml',
         'current individual_income', 'orginal individual_income', 'lapse_type',
-        'occupation_class', 'partner_income'])
+        'occupation_class'])
     
      
     
@@ -315,9 +289,8 @@ def near_ftr_lapse_data_clean_filter(near_ftr_lapse_data):
     near_ftr_lapse_data[['total_funeral_premium','funeral_count','res_code_update_sum','res_code_sale_sum','res_code_payment_sum','res_code_other_sum','res_code_claims_sum',
                            'res_code_QA_sum','# calls contacted']]=near_ftr_lapse_data[['total_funeral_premium','funeral_count','res_code_update_sum','res_code_sale_sum','res_code_payment_sum','res_code_other_sum','res_code_claims_sum',
                            'res_code_QA_sum','# calls contacted']].fillna(0)
-    near_ftr_lapse_data.drop(columns=['partner_income','fixed_debit_day','total_collected', 'net_collected','number_of_collection_attempts', 'number_of_successful_collections', 'campaign_name',
-                                  'pricing_version','expected_lapse_rate', 'hiv_test_required',  'hiv_group', 'lead_provider_name', 'lead_type',
-                                        'occupation', 'occupation_class','underwriting_outcome','sales_channel_x', 'sales_channel_y','anniversary_due', 'cover_start_date_original', 'first_collected_date', 'first_month_at_risk', 'last_benefit_type', 'last_month_at_risk', 'last_settled','sale_date','payment_profile','SEC'], inplace=True)
+    near_ftr_lapse_data.drop(columns=[ 'campaign_name','hiv_test_required',  'lead_provider_name', 'lead_type',
+                                        'occupation_class','anniversary_due', 'cover_start_date_original','sale_date'], inplace=True)
 
 
     near_ftr_lapse_data=near_ftr_lapse_data[near_ftr_lapse_data['has_been_recaptured']==0]
@@ -326,7 +299,7 @@ def near_ftr_lapse_data_clean_filter(near_ftr_lapse_data):
 
 
 def at_inception_data_clean_filter(inception_data):
-    inception_data.drop(columns=['partner_income','fixed_debit_day','pricing_version','expected_lapse_rate'], inplace=True)
+
 
     inception_data=inception_data[inception_data['policy_type']=='Fully Underwritten']
 
