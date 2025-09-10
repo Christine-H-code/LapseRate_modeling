@@ -7,6 +7,9 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 from datetime import datetime
+from sklearn import tree
+from sklearn.tree import DecisionTreeClassifier, export_text
+from sklearn.model_selection import train_test_split
 #________________________________________________________________________________________________________   
 
 def res_code_categories_postsale(code): # creating buckets for resolution code to hot-one encode it and not have too many columns
@@ -152,13 +155,12 @@ def payments_history(payment_data,current_date='2025-08-01'):
     payment_data['duration to anniversary (months)'] = payment_data.apply(
         lambda row: ((row['anniversary_due'] - row['cancellation_effective_date']) / np.timedelta64(1, 'D'))//30
         if pd.notnull(row['cancellation_effective_date'])
-        else ((row['anniversary_due'] - pd.Timestamp('2025-08-01')) / np.timedelta64(1, 'D'))//30,
+        else ((row['anniversary_due'] - pd.Timestamp(current_date)) / np.timedelta64(1, 'D'))//30,
         axis=1)
 
     #________________aggregating payments data_____________________
     payments = DataPreparation(df=payment_data)
-    agg_dict={'sales_channel': pd.NamedAgg(column='sales_channel', aggfunc='first'),
-              '* policy start delay months': pd.NamedAgg(column='* policy start delay months', aggfunc='max'),
+    agg_dict={'* policy start delay months': pd.NamedAgg(column='* policy start delay months', aggfunc='max'),
               '* policy duration months': pd.NamedAgg(column='* policy duration months', aggfunc='max'),
               'last premium amount due': pd.NamedAgg(column='amount', aggfunc='last'),
               'duration to anniversary': pd.NamedAgg(column='duration to anniversary (months)', aggfunc='max')}
@@ -173,7 +175,7 @@ def payments_history(payment_data,current_date='2025-08-01'):
 
     #____________________Adding all data together (agg paments data, last months paid data)________________________
     payments_data = multi_data_ops(file_list=[],df1=payments.agg_df,df2=last_month_payments_data)
-    payments_data.merged_df = payments_data.merging(on='policy_id',df_left=payments_data.df1, df_right=payments_data.df2, how='left',col_left=['policy_id', 'sales_channel', '* policy start delay months',
+    payments_data.merged_df = payments_data.merging(on='policy_id',df_left=payments_data.df1, df_right=payments_data.df2, how='left',col_left=['policy_id', '* policy start delay months',
             '* policy duration months', 'last premium amount due',
             'duration to anniversary','payment_method_DebiCheck_sum', 'payment_method_EFT_sum',
             'payment_method_Pre Fund_sum', '# anniversaries', 'payment rate'])
@@ -185,15 +187,12 @@ def payments_history(payment_data,current_date='2025-08-01'):
 def lapses(lapse_data):
     lapse = DataPreparation(df=lapse_data)
     agg_dict={'cover_amount_full': pd.NamedAgg(column='cover_amount_full', aggfunc='mean'),
-              'education': pd.NamedAgg(column='education', aggfunc='last'),
               'eml': pd.NamedAgg(column='eml', aggfunc='mean'),
               'pml': pd.NamedAgg(column='pml', aggfunc='mean'),
-              'gender': pd.NamedAgg(column= 'gender', aggfunc='last'),
               'current individual_income': pd.NamedAgg(column='individual_income', aggfunc='last'),
               'orginal individual_income': pd.NamedAgg(column='individual_income', aggfunc='first'),
               'lapse_type': pd.NamedAgg(column='lapse_type', aggfunc=lambda x: x.mode().iloc[0] if not x.mode().empty else np.nan),
-              'occupation_class': pd.NamedAgg(column='occupation_class', aggfunc='last'),
-              'smoker_status': pd.NamedAgg(column='smoker_status', aggfunc='last')
+              'occupation_class': pd.NamedAgg(column='occupation_class', aggfunc='last')
               }
     lapse.aggregation(groupby_cols=['policy_name'],cat_cols=[],agg_dict_not_cat_cols=agg_dict)
     return lapse.agg_df
@@ -202,14 +201,15 @@ def lapses(lapse_data):
 
 def at_inception_data_merge(pre_inception_calls_data, sales_data,policy_data,lapse_data):
 
+
     at_inception_data = multi_data_ops(file_list=[],df1=pre_inception_calls_data, df2=sales_data,df3=policy_data,df4=lapse_data)
 
     sale_policy = at_inception_data.merging(on='policy_name',df_left=at_inception_data.df2, df_right=at_inception_data.df3, how='inner', col_left=['policy_id', 'policy_name', 'age', 'benefits_count', 
         'education','gender', 'income', 'lead_provider_name', 'lead_type',  'smoker_status',
         'sold_socio_economic_class'], col_right=[ 'policy_name', 'campaign_name', 'optionality',
         'hiv_test_required', 'policy_type', 'premium', 'cover_start_date_original','cover_start_date', 
-        'cancellation_effective_date','sale_date', 'original_premium', 'anniversary_due', 'last_benefit_amount',
-        'last_month_at_risk','total_funeral_premium','funeral_count', 'has_been_recaptured',   'prev_premium',
+        'cancellation_effective_date','sale_date', 'original_premium', 'last_benefit_amount',
+        'total_funeral_premium','funeral_count', 'has_been_recaptured',   'prev_premium',
         'lapse_flag'])
     
     sale_policy_lapse = at_inception_data.merging(on='policy_name',df_left=sale_policy, df_right=at_inception_data.df4, how='inner', col_right=['policy_name', 'cover_amount_full',
@@ -217,13 +217,10 @@ def at_inception_data_merge(pre_inception_calls_data, sales_data,policy_data,lap
         'occupation_class'])
     
     at_inception_data.df_merged = at_inception_data.merging(on='policy_name',df_left=sale_policy_lapse, df_right=at_inception_data.df1, how='left')
-
+ 
     #making missing values 0 for specified columns
-    for col in ['# calls',
-          '# calls contacted', 'res_code_QA_sum', 'res_code_claims_sum',
-          'res_code_no interest_sum', 'res_code_other_sum',
-          'res_code_payment_sum', 'res_code_quote_sum', 'res_code_sale_sum',
-          'res_code_update_sum','total_funeral_premium', 'funeral_count']:
+    for col in list(set(['# calls',
+          '# calls contacted','total_funeral_premium', 'funeral_count'])|set([col for col in at_inception_data.df_merged.columns if col.startswith('res_code_')])):
         at_inception_data.df_merged[col] = at_inception_data.df_merged[col].apply(lambda x: x if pd.notnull(x) else 0)
 
     #Replace missing orginal_premium values with premium
@@ -237,13 +234,13 @@ def at_inception_data_merge(pre_inception_calls_data, sales_data,policy_data,lap
     at_inception_data.df_merged['duration_policy_start_delay'] =  ((at_inception_data.df_merged[ 'cover_start_date'] - at_inception_data.df_merged['cover_start_date_original']) / np.timedelta64(1, 'D'))//30
 
     #ordering the columns
-    at_inception_data.df_merged = at_inception_data.df_merged[['policy_id', 'policy_name', 'age', 'education',
+    cols=list(set(['policy_id', 'policy_name', 'age', 'education',
            'gender', 'income', 'smoker_status','sold_socio_economic_class','occupation_class','orginal individual_income',
            'lead_provider_name', 'lead_type', 'sale_date', 'campaign_name',
            'optionality', 'hiv_test_required', 'eml', 'pml','policy_type','benefits_count','last_benefit_amount','cover_amount_full','total_funeral_premium','funeral_count','original_premium','duration_policy_start_delay',
-           '# calls','# calls contacted', 'res_code_QA_sum', 'res_code_claims_sum','res_code_no interest_sum', 'res_code_other_sum',
-           'res_code_payment_sum', 'res_code_quote_sum', 'res_code_sale_sum','res_code_update_sum',
-           'cancellation_effective_date', 'lapse_type', 'lapse_flag' , 'cover_start_date' ]] # use cover_start_date, cancellation_effective_date to get econimic indexes
+           '# calls','# calls contacted',
+           'cancellation_effective_date', 'lapse_type', 'lapse_flag' , 'cover_start_date' ])|set([col for col in at_inception_data.df_merged.columns if col.startswith('res_code_')]))
+    at_inception_data.df_merged = at_inception_data.df_merged[cols] # use cover_start_date, cancellation_effective_date to get econimic indexes
     
     return at_inception_data.df_merged
 
@@ -257,8 +254,7 @@ def post_sale_data_merge(post_sale_calls_data, sales_data,policy_data,lapse_data
         'education','gender', 'income', 'lead_provider_name', 'lead_type', 'smoker_status',
         'sold_socio_economic_class'], col_right=[ 'policy_name','campaign_name','optionality',
         'hiv_test_required', 'policy_type', 'premium', 'cover_start_date_original','cover_start_date', 
-        'cancellation_effective_date','sale_date', 'original_premium',
-        'anniversary_due', 'last_benefit_amount',
+        'cancellation_effective_date','sale_date', 'original_premium','last_benefit_amount',
          'total_funeral_premium','funeral_count', 'has_been_recaptured', 'prev_premium',
         'lapse_flag'])
     
@@ -274,23 +270,18 @@ def post_sale_data_merge(post_sale_calls_data, sales_data,policy_data,lapse_data
     post_sale_data.df_merged = post_sale_data.merging(on='policy_name',df_left=sale_policy_lapse_pay, df_right=post_sale_data.df1, how='left')
 
     #making missing values 0 for specified columns
-    for col in ['# calls', '# calls contacted',
-       'res_code_QA_sum', 'res_code_claims_sum', 'res_code_other_sum',
-       'res_code_payment_sum', 'res_code_sale_sum', 'res_code_update_sum','total_funeral_premium', 'funeral_count']:
+    for col in list(set(['# calls','# calls contacted','total_funeral_premium', 'funeral_count'])|set([col for col in post_sale_data.df_merged.columns if col.startswith('res_code_')])):
         post_sale_data.df_merged[col] = post_sale_data.df_merged[col].apply(lambda x: x if pd.notnull(x) else 0)
 
     
-        return post_sale_data.df_merged
+    return post_sale_data.df_merged
       
 
 #________________________________________________________________________________________________________
 def near_ftr_lapse_data_clean_filter(near_ftr_lapse_data):
-    #filling out some missing data with 0 and removing column
-    near_ftr_lapse_data[['total_funeral_premium','funeral_count','res_code_update_sum','res_code_sale_sum','res_code_payment_sum','res_code_other_sum','res_code_claims_sum',
-                           'res_code_QA_sum','# calls contacted']]=near_ftr_lapse_data[['total_funeral_premium','funeral_count','res_code_update_sum','res_code_sale_sum','res_code_payment_sum','res_code_other_sum','res_code_claims_sum',
-                           'res_code_QA_sum','# calls contacted']].fillna(0)
+
     near_ftr_lapse_data.drop(columns=[ 'campaign_name','hiv_test_required',  'lead_provider_name', 'lead_type',
-                                        'occupation_class','anniversary_due', 'cover_start_date_original','sale_date'], inplace=True)
+                                        'occupation_class','cover_start_date_original','sale_date'], inplace=True)
 
 
     near_ftr_lapse_data=near_ftr_lapse_data[near_ftr_lapse_data['has_been_recaptured']==0]
@@ -374,3 +365,81 @@ def near_ftr_targets(near_ftr):
 
 #__________________________________________________________________________________________________________________
 
+#gropuping function using decision trees
+
+
+
+def group_by_decision_tree(model, column_data, column_name):
+    """
+    Groups a pandas Series into categorical bands based on the leaf nodes of a
+    fitted Decision Tree Classifier model.
+
+    This function first traverses the decision tree to determine the value ranges
+    for each leaf node. It then applies the model to the input column data to get
+    the leaf node index for each data point and uses the collected ranges to
+    assign a categorical band.
+
+    Args:
+        model (sklearn.tree.DecisionTreeClassifier): A fitted decision tree model.
+        column_data (pd.Series): The pandas Series to be grouped.
+        column_name (str): The name of the column in the original DataFrame
+                           that the decision tree was trained on.
+
+    Returns:
+        pd.Series: A new pandas Series containing the categorical bands.
+    """
+    # Ensure the model is a decision tree
+    if not isinstance(model, DecisionTreeClassifier):
+        raise TypeError("The provided model must be an instance of DecisionTreeClassifier.")
+    
+    tree = model.tree_
+    
+    # Check if the tree is empty or not fitted
+    if tree.node_count == 0:
+        raise ValueError("The decision tree model does not seem to be fitted.")
+
+    # A helper dictionary to store the min/max range for each leaf node
+    leaf_ranges = {}
+    
+    def traverse_tree(node_index, lower_bound=float('-inf'), upper_bound=float('inf')):
+        """
+        Recursively traverses the tree to find the value range for each leaf node.
+        """
+        # Base case: if it's a leaf node
+        if tree.children_left[node_index] == tree.children_right[node_index]:
+            leaf_ranges[node_index] = (lower_bound, upper_bound)
+            return
+
+        threshold = tree.threshold[node_index]
+        left_child = tree.children_left[node_index]
+        right_child = tree.children_right[node_index]
+
+        # Recurse down the left child (less than or equal to threshold)
+        traverse_tree(left_child, lower_bound, min(upper_bound, threshold))
+
+        # Recurse down the right child (greater than threshold)
+        traverse_tree(right_child, max(lower_bound, threshold), upper_bound)
+
+    # Start the traversal from the root node (index 0)
+    traverse_tree(0)
+
+    # Use the model's apply method to get the leaf node for each data point
+    # We need to reshape the data to a 2D array for the model
+    leaf_indices = model.apply(column_data.values.reshape(-1, 1))
+
+    # Create the new column of grouped bands
+    grouped_bands = []
+    for index in leaf_indices:
+        lower, upper = leaf_ranges[index]
+
+        # Format the string for the band
+        if lower == float('-inf'):
+            band = f"< {upper:.2f}"
+        elif upper == float('inf'):
+            band = f"> {lower:.2f}"
+        else:
+            band = f"{lower:.2f} - {upper:.2f}"
+        
+        grouped_bands.append(band)
+
+    return pd.Series(grouped_bands, index=column_data.index, name=f'{column_name}_bands')
