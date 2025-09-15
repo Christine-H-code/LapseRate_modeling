@@ -10,6 +10,12 @@ from datetime import datetime
 from sklearn import tree
 from sklearn.tree import DecisionTreeClassifier, export_text
 from sklearn.model_selection import train_test_split
+
+import scipy.stats as stats
+from statsmodels.tsa.stattools import adfuller
+from statsmodels.tsa.seasonal import STL
+import math
+
 #________________________________________________________________________________________________________   
 
 def res_code_categories_postsale(code): # creating buckets for resolution code to hot-one encode it and not have too many columns
@@ -443,3 +449,63 @@ def group_by_decision_tree(model, column_data, column_name):
         grouped_bands.append(band)
 
     return pd.Series(grouped_bands, index=column_data.index, name=f'{column_name}_bands')
+
+#__________________________________________________________________________________________________________________
+
+def data_processing(current_date, model,calls_data ,sales_data ,policy_data,lapse_data,inflation,unemployment,payment_data=None):
+    pol_names = list(lapse_data['policy_name'])
+    sales_data = sales_data[sales_data['policy_name'].isin(pol_names)]
+    pol_ids= list(sales_data['policy_id'])
+    calls_data = calls_data[calls_data['policy_name'].isin(pol_names)]
+    payment_data = payment_data[payment_data['policy_id'].isin(pol_ids)]
+    policy_data = policy_data[policy_data['policy_name'].isin(pol_names)]
+
+    #Make date column of data type datetime
+    sales_data=do.dtype_datetime(sales_data)
+    calls_data=do.dtype_datetime(calls_data)
+    payment_data=do.dtype_datetime(payment_data)
+    policy_data=do.dtype_datetime(policy_data)
+    lapse_data=do.dtype_datetime(lapse_data)
+
+    if model =='at_inception':
+        pre_inception_calls_data = pre_sale_calls(calls_data,policy_data)
+        lapse_data = lapses(lapse_data)
+        sales_data = sales_data.drop_duplicates(subset=['policy_id'], keep='last')
+        inception_data = at_inception_data_merge(pre_inception_calls_data, sales_data,policy_data,lapse_data)
+        inception_data = at_inception_data_clean_filter(inception_data)
+
+        inception_data['sale_date_year'] = pd.to_datetime(inception_data['sale_date']).dt.year
+        inception_data = adding_eco_ind(inflation, unemployment,inception_data,'sale_date_year')
+
+        inception_data = inception_targets(inception_data)
+
+        inception_data.drop(columns=['orginal individual_income', 'policy_id', 'sale_date_year', 'policy_type',
+               'campaign_name', 'cancellation_effective_date', 'lapse_type','cover_start_date', 'end_date', 'pol_duration'],inplace=True)
+        cont_var_list=['age','income',  'last_benefit_amount', 'cover_amount_full', 'total_funeral_premium',  'original_premium']
+        target='lapse_flag'
+        df=inception_data.copy()
+        for variable in cont_var_list:
+            X = df[variable].values.reshape(-1, 1)
+            Y = df[target]
+            clf=tree.DecisionTreeClassifier(min_samples_leaf=math.floor(0.15*inception_data.shape[0]))
+            clf=clf.fit(X,Y)
+            df[variable+'_band'] = group_by_decision_tree(clf, df[variable], df)
+        inception_data=df
+        return inception_data
+
+    elif model=='near_future':
+        post_sale_calls_data = post_sale_calls(calls_data,policy_data)
+        payment_hist_data = payments_history(payment_data,current_date=current_date)
+        lapse_data = lapses(lapse_data)
+        sales_data = sales_data.drop_duplicates(subset=['policy_id'], keep='last')
+        near_ftr_lapse_data = post_sale_data_merge(post_sale_calls_data, sales_data,policy_data,lapse_data,payment_hist_data)
+        near_ftr_lapse_data = near_ftr_lapse_data_clean_filter(near_ftr_lapse_data)
+
+        near_ftr_lapse_data['cover_start_date_year' ] = pd.to_datetime(near_ftr_lapse_data['cover_start_date' ]).dt.year
+        near_ftr_lapse_data = adding_eco_ind(inflation, unemployment,near_ftr_lapse_data,'cover_start_date_year')
+
+        near_ftr_lapse_data = near_ftr_targets(near_ftr_lapse_data)
+        return near_ftr_lapse_data
+
+
+
